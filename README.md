@@ -1,4 +1,4 @@
-# ConvertTools_QGIS3
+# ConvertTools_QGIS4
 This plugin have 3 functions: check, defined and convert coordinate system. Developed by Green Field, Ltd. Upgraded to v2 for compability QGIS 4, fixed some bugs and improved the efficiency by PLT.
 
 - The first check coordinate, normally you must chose to "Properties" and go to metadata to check coordinate system. And once time, you must open and view a layer. With this plugin, you can check faster coordinate system all layer. They will print all information of layers. Especially, with Vietnam local coordinate system VN2000, this tool will print the name which the user often remember.
