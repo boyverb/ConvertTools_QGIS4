@@ -11,7 +11,7 @@ name=Check, Define & Convert CRS v2
 qgisMinimumVersion=3.0
 qgisMaximumVersion=4.99
 description=Check, define and convert CRS v2, modified by PLT
-version=2.0
+version=2.1
 author=GFD
 email=boy.verb@gmail.com
 
@@ -25,7 +25,7 @@ repository=https://github.com/boyverb/ConvertTools_QGIS4
 # Recommended items:
 
 # Uncomment the following line and add your changelog:
-# changelog=
+changelog=Chỉ chuyển đổi các layer được chọn; hộp thoại chuyển đổi giữ nguyên cho đến khi nhập đủ thông tin.
 
 # Tags are comma separated with spaces allowed
 tags=python,gfd,vn2000,check,define,convert,crs

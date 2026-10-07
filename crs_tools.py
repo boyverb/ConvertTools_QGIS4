@@ -22,13 +22,16 @@
 
 Phiên bản đã nâng cấp: dùng qgis.PyQt (chạy được trên PyQt5/QGIS 3 và
 PyQt6/QGIS 4), bỏ resources.py (Qt5 rcc), bỏ các API đã bị gỡ.
+Chức năng chuyển đổi chỉ áp dụng cho các layer được chọn trong danh sách,
+hộp thoại chuyển đổi giữ nguyên cho đến khi nhập đủ thông tin.
 """
 import os
 import re
 
-from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication
+from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, Qt
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QFileDialog, QTableWidgetItem
+from qgis.PyQt.QtWidgets import (QFileDialog, QTableWidgetItem,
+                                 QListWidgetItem, QAbstractItemView)
 
 try:  # Qt6: QAction nằm trong QtGui
     from qgis.PyQt.QtGui import QAction
@@ -197,6 +200,8 @@ class CheckDefConv:
         self.dlg2.button_box.accepted.connect(self.apply_define)
         self.dlg3.lineEdit.clear()
         self.dlg3.toolButton.clicked.connect(self.select_output)
+        # Dialog chuyển đổi chỉ đóng khi hàm này không báo lỗi
+        self.dlg3.validator = self._validate_convert
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -304,38 +309,84 @@ class CheckDefConv:
             self.dlg3, "Chọn thư mục để lưu", "")
         self.dlg3.lineEdit.setText(output_dir)
 
+    def _selected_layers(self):
+        """Các layer đang được chọn trong danh sách (theo thứ tự hiển thị)."""
+        project = QgsProject.instance()
+        list_widget = self.dlg3.listWidget
+        layers = []
+        for row in range(list_widget.count()):
+            item = list_widget.item(row)
+            if not item.isSelected():
+                continue
+            layer = project.mapLayer(item.data(Qt.ItemDataRole.UserRole))
+            if isinstance(layer, QgsVectorLayer):
+                layers.append(layer)
+        return layers
+
+    def _validate_convert(self):
+        """Kiểm tra dữ liệu dialog chuyển đổi.
+        Trả về (tiêu đề, nội dung) nếu có lỗi, ngược lại trả về None."""
+        if not self._selected_layers():
+            return ("Chưa chọn layer",
+                    "Vui lòng chọn ít nhất một layer trong danh sách "
+                    "(giữ Ctrl/Shift để chọn nhiều layer).")
+
+        if not (self.dlg3.checkBox_shp.isChecked()
+                or self.dlg3.checkBox_tab.isChecked()):
+            return ("Chưa chọn định dạng",
+                    "Vui lòng chọn định dạng file đầu ra (SHP hoặc TAB).")
+
+        output_dir = self.dlg3.lineEdit.text().strip()
+        if not (output_dir and os.path.isdir(output_dir)):
+            return ("Chưa có thư mục lưu",
+                    "Vui lòng chọn một thư mục hợp lệ để lưu file.")
+
+        # Kiểm tra trước tên HTĐ để không báo lỗi giữa chừng khi đang lưu
+        for name in (self.dlg3.comboBox.currentText(),
+                     self.dlg3.comboBox_output.currentText()):
+            try:
+                crs_from_name(name)
+            except ValueError as err:
+                return ("Lỗi hệ tọa độ", str(err))
+
+        return None
+
     def convert(self):
-        self.dlg3.listWidget.clear()
-        self.dlg3.listWidget.addItems([layers.name() for layers in self._vector_layers()])
+        list_widget = self.dlg3.listWidget
+        list_widget.clear()
+        # Cho phép chọn nhiều layer bằng Ctrl / Shift
+        list_widget.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection)
 
-        # PyQt6: exec_() đã bị gỡ, dùng exec()
+        for layer in self._vector_layers():
+            item = QListWidgetItem(layer.name())
+            # Lưu id layer để không nhầm khi có nhiều layer trùng tên
+            item.setData(Qt.ItemDataRole.UserRole, layer.id())
+            list_widget.addItem(item)
+
+        # exec() chỉ trả về True khi _validate_convert() đã chấp nhận dữ liệu
         if self.dlg3.exec():
-            output_dir = self.dlg3.lineEdit.text()
-            if output_dir and os.path.isdir(output_dir):
-                self.save_layers()
-            else:
-                self._message("Không có đường dẫn đến thư mục",
-                              "Vui lòng chọn thư mục để lưu file",
-                              Qgis.MessageLevel.Warning)
+            self.save_layers(self._selected_layers())
 
-    def save_layers(self):
+    def save_layers(self, layers):
         if self.dlg3.checkBox_shp.isChecked():
-            self.save_file('shp')
+            self.save_file('shp', layers)
         if self.dlg3.checkBox_tab.isChecked():
-            self.save_file('tab')
+            self.save_file('tab', layers)
 
-    def save_file(self, fmt):
+    def save_file(self, fmt, layers):
         ext, driver = {'shp': ('.shp', 'ESRI Shapefile'),
                        'tab': ('.tab', 'MapInfo File')}[fmt]
-        output_dir = self.dlg3.lineEdit.text()
+        output_dir = self.dlg3.lineEdit.text().strip()
         src_name = self.dlg3.comboBox.currentText()
         dst_name = self.dlg3.comboBox_output.currentText()
         os.makedirs(output_dir, exist_ok=True)
 
         project = QgsProject.instance()
         context = project.transformContext()
+        used_names = set()  # tránh ghi đè khi các layer trùng tên
 
-        for layer in self._vector_layers():
+        for layer in layers:
             try:
                 # HTĐ đầu vào: định nghĩa lại CRS cho layer (nếu không phải System)
                 if src_name.strip().lower() != 'system':
@@ -351,7 +402,12 @@ class CheckDefConv:
             if dest_crs.isValid() and dest_crs != layer.crs():
                 options.ct = QgsCoordinateTransform(layer.crs(), dest_crs, project)
 
-            safe_name = re.sub(r'[\\/:*?"<>|]', '_', layer.name())
+            base = re.sub(r'[\\/:*?"<>|]', '_', layer.name())
+            safe_name, n = base, 1
+            while safe_name.lower() in used_names:
+                n += 1
+                safe_name = "%s_%d" % (base, n)
+            used_names.add(safe_name.lower())
             path = os.path.join(output_dir, safe_name + ext)
 
             # writeAsVectorFormat đã bị gỡ -> dùng writeAsVectorFormatV3

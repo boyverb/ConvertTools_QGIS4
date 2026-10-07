@@ -13,3 +13,16 @@ class ConvertVN2000Dialog(QtWidgets.QDialog, FORM_CLASS):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setupUi(self)
+        # Hàm kiểm tra do plugin gán vào: trả về (tiêu đề, nội dung lỗi)
+        # hoặc None nếu dữ liệu hợp lệ
+        self.validator = None
+
+    def accept(self):
+        """Chỉ đóng hộp thoại khi dữ liệu nhập đã đầy đủ."""
+        if self.validator is not None:
+            problem = self.validator()
+            if problem:
+                title, text = problem
+                QtWidgets.QMessageBox.warning(self, title, text)
+                return  # giữ hộp thoại mở
+        super().accept()

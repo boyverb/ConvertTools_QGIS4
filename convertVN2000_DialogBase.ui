@@ -57,6 +57,9 @@
        <height>221</height>
       </rect>
      </property>
+     <property name="selectionMode">
+      <enum>QAbstractItemView::ExtendedSelection</enum>
+     </property>
     </widget>
     <widget class="QGroupBox" name="groupBox">
      <property name="geometry">
